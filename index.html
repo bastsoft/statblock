@@ -36,10 +36,9 @@
 
                 onMounted(async () => {
                     try {
-                        // Construct URL and fetch Mechanic.md.
-                        // On GitHub Pages, pathname includes the repo name, so we need to remove it.
-                        // Example: /statblock/user/gist-id/... -> /user/gist-id/...
-                        const path = window.location.pathname.replace(/^\/[^/]+/, '');
+                        // Construct URL from the hash part of the URL.
+                        // Example URL: .../statblock/#/user/gist-id/...
+                        const path = window.location.hash.substring(1); // Removes the leading '#'
 
                         const mechanicUrl = 'https://gist.githubusercontent.com' + path;
                         const mechanicResponse = await fetch(mechanicUrl);
