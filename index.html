@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Statblock</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js"></script>
+    <style>
+        body { font-family: sans-serif; }
+        .statblock { border: 1px solid #ccc; padding: 1em; max-width: 500px; margin: 1em auto; }
+        .statblock h1 { font-size: 1.5em; margin-top: 0; }
+        .statblock h2 { font-size: 1.2em; }
+        .statblock .property { margin-bottom: 0.5em; }
+        .statblock .property-display { font-weight: bold; }
+        .statblock .group { border-top: 1px solid #ccc; margin-top: 1em; padding-top: 1em; }
+        .statblock .inline { display: flex; justify-content: space-between; }
+        .statblock .traits ul { padding-left: 1.5em; }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <h1>statblock</h1>
+        <div v-if="layout && statblockData" class="statblock">
+            <component v-for="block in layout.blocks" :is="getComponentName(block.type)" :block="block" :data="statblockData" :layout="layout"></component>
+        </div>
+    </div>
+
+    <script>
+        const { createApp, ref, onMounted } = Vue;
+
+        const app = createApp({
+            setup() {
+                const statblockData = ref(null);
+                const layout = ref(null);
+
+                onMounted(async () => {
+                    try {
+                        // Construct URL and fetch Mechanic.md
+                        const path = window.location.pathname;
+                        const mechanicUrl = 'https://gist.githubusercontent.com' + path;
+                        const mechanicResponse = await fetch(mechanicUrl);
+                        if (!mechanicResponse.ok) {
+                            throw new Error(`Failed to fetch Mechanic.md: ${mechanicResponse.statusText}`);
+                        }
+                        const mechanicText = await mechanicResponse.text();
+
+                        // Extract layout URL from Mechanic.md
+                        const layoutUrlRegex = /^layout:(.*)$/m;
+                        const layoutUrlMatch = mechanicText.match(layoutUrlRegex);
+                        const layoutUrl = layoutUrlMatch && layoutUrlMatch[1] ? layoutUrlMatch[1].trim() : 'starfinder.json';
+
+                        // Parse statblock data from Mechanic.md
+                        const statblockRegex = /```statblock\n([\s\S]*?)\n```/;
+                        const match = mechanicText.match(statblockRegex);
+                        if (match && match[1]) {
+                            statblockData.value = jsyaml.load(match[1]);
+                        }
+
+                        // Fetch layout from the extracted or default URL
+                        const layoutResponse = await fetch(layoutUrl);
+                        layout.value = await layoutResponse.json();
+
+                    } catch (error) {
+                        console.error("Error loading data:", error);
+                    }
+                });
+
+                const getComponentName = (type) => {
+                    return type + '-block';
+                };
+
+                return {
+                    statblockData,
+                    layout,
+                    getComponentName
+                };
+            }
+        });
+
+        const propertyMixin = {
+            methods: {
+                getProperty(prop) {
+                    if (this.block.conditioned && !this.data[prop]) {
+                        return null;
+                    }
+                    return this.data[prop] || this.block.fallback;
+                }
+            }
+        };
+
+        app.component('group-block', {
+            props: ['block', 'data', 'layout'],
+            template: `
+                <div class="group">
+                    <h2 v-if="block.heading">{{ block.heading }}</h2>
+                    <component v-for="nestedBlock in block.nested" :is="getComponentName(nestedBlock.type)" :block="nestedBlock" :data="data" :layout="layout"></component>
+                </div>
+            `,
+            methods: {
+                getComponentName(type) {
+                    return type + '-block';
+                }
+            }
+        });
+
+        app.component('inline-block', {
+            props: ['block', 'data', 'layout'],
+            template: `
+                <div class="inline">
+                    <component v-for="nestedBlock in block.nested" :is="getComponentName(nestedBlock.type)" :block="nestedBlock" :data="data" :layout="layout"></component>
+                </div>
+            `,
+            methods: {
+                getComponentName(type) {
+                    return type + '-block';
+                }
+            }
+        });
+
+
+        app.component('heading-block', {
+            mixins: [propertyMixin],
+            props: ['block', 'data', 'layout'],
+            template: `<h1 v-if="getProperty(block.properties[0])">{{ getProperty(block.properties[0]) }}</h1>`
+        });
+
+        app.component('subheading-block', {
+            mixins: [propertyMixin],
+            props: ['block', 'data', 'layout'],
+            template: `<h3 v-if="getProperty(block.properties[0])">{{ getProperty(block.properties[0]) }}</h3>`
+        });
+
+        app.component('property-block', {
+            mixins: [propertyMixin],
+            props: ['block', 'data', 'layout'],
+            template: `
+                <div class="property" v-if="getProperty(block.properties[0])">
+                    <span class="property-display">{{ block.display }}</span>
+                    {{ getProperty(block.properties[0]) }}
+                </div>
+            `
+        });
+        
+        app.component('image-block', {
+            mixins: [propertyMixin],
+            props: ['block', 'data', 'layout'],
+            data() {
+                return {
+                    imageUrl: ''
+                };
+            },
+            template: `
+                <div v-if="getProperty(block.properties[0])">
+                    <img v-if="imageUrl" :src="imageUrl" :style="{height: layout.cssProperties.imageHeight || 'auto'}" />
+                </div>
+            `,
+            async mounted() {
+                const imageProp = this.getProperty(this.block.properties[0]);
+                if (typeof imageProp === 'string') {
+                    try {
+                        // Используем прокси allorigins.win для обхода CORS и получения URL после редиректа
+                        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(imageProp)}`;
+                        const response = await fetch(proxyUrl);
+                        const data = await response.json();
+                        this.imageUrl = data.contents; // allorigins возвращает конечный URL в этом поле
+                    } catch (e) {
+                        // Если прокси не сработает, пробуем использовать оригинальный URL
+                        console.error("Could not fetch image due to CORS or other issues, trying original URL", e);
+                        this.imageUrl = imageProp; // Fallback to original URL
+                    }
+                }
+            }
+        });
+
+
+        app.component('traits-block', {
+            mixins: [propertyMixin],
+            props: ['block', 'data', 'layout'],
+            template: `
+                <div class="traits" v-if="getProperty(block.properties[0])">
+                    <h3 v-if="block.heading">{{ block.heading }}</h3>
+                    <ul>
+                        <li v-for="item in getProperty(block.properties[0])">
+                            <strong>{{ item.name }}:</strong> {{ item.desc }}
+                        </li>
+                    </ul>
+                </div>
+            `
+        });
+        
+        app.component('text-block', {
+            mixins: [propertyMixin],
+            props: ['block', 'data', 'layout'],
+            template: `
+                <div v-if="getProperty(block.properties[0])">
+                    <h3 v-if="block.heading">{{ block.heading }}</h3>
+                    <p>{{ getProperty(block.properties[0]) }}</p>
+                </div>
+            `
+        });
+
+        app.component('collapse-block', {
+            props: ['block', 'data', 'layout'],
+            data() {
+                return {
+                    isOpen: this.block.open
+                }
+            },
+            template: `
+                <div>
+                    <button @click="isOpen = !isOpen">{{ isOpen ? 'Collapse' : 'Expand' }}</button>
+                    <div v-if="isOpen">
+                        <component v-for="nestedBlock in block.nested" :is="getComponentName(nestedBlock.type)" :block="nestedBlock" :data="data" :layout="layout"></component>
+                    </div>
+                </div>
+            `,
+            methods: {
+                getComponentName(type) {
+                    return type + '-block';
+                }
+            }
+        });
+
+
+        app.mount("#app");
+    </script>
+</body>
+</html>
