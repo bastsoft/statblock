@@ -164,20 +164,7 @@
                 </div>
             `,
             async mounted() {
-                const imageProp = this.getProperty(this.block.properties[0]);
-                if (typeof imageProp === 'string') {
-                    try {
-                        // Используем прокси allorigins.win для обхода CORS и получения URL после редиректа
-                        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(imageProp)}`;
-                        const response = await fetch(proxyUrl);
-                        const data = await response.json();
-                        this.imageUrl = data.contents; // allorigins возвращает конечный URL в этом поле
-                    } catch (e) {
-                        // Если прокси не сработает, пробуем использовать оригинальный URL
-                        console.error("Could not fetch image due to CORS or other issues, trying original URL", e);
-                        this.imageUrl = imageProp; // Fallback to original URL
-                    }
-                }
+                this.imageUrl = this.getProperty(this.block.properties[0]);
             }
         });
 
