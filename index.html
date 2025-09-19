@@ -16,11 +16,14 @@
         .statblock .group { border-top: 1px solid #ccc; margin-top: 1em; padding-top: 1em; }
         .statblock .inline { display: flex; justify-content: space-between; }
         .statblock .traits ul { padding-left: 1.5em; }
+        .dice-roller { cursor: pointer; display: inline-block; }
+        .dice-popup { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; border: 1px solid #ccc; padding: 1em; box-shadow: 0 2px 10px rgba(0,0,0,0.2); z-index: 1000; }
+        .dice-popup-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 999; }
+
     </style>
 </head>
 <body>
     <div id="app">
-        <h1>statblock</h1>
         <div v-if="layout && statblockData" class="statblock">
             <component v-for="block in layout.blocks" :is="getComponentName(block.type)" :block="block" :data="statblockData" :layout="layout"></component>
         </div>
@@ -138,8 +141,11 @@
             props: ['block', 'data', 'layout'],
             template: `
                 <div class="property" v-if="getProperty(block.properties[0])">
-                    <span class="property-display">{{ block.display }}</span>
-                    {{ getProperty(block.properties[0]) }}
+                    <span class="property-display">{{ block.display }} </span>
+                    <template v-if="block.dice">
+                        <dice-parser :text="getProperty(block.properties[0])"></dice-parser>
+                    </template>
+                    <template v-else>{{ getProperty(block.properties[0]) }}</template>
                 </div>
             `
         });
@@ -184,7 +190,9 @@
                     <h3 v-if="block.heading">{{ block.heading }}</h3>
                     <ul>
                         <li v-for="item in getProperty(block.properties[0])">
-                            <strong>{{ item.name }}:</strong> {{ item.desc }}
+                            <strong>{{ item.name }}:</strong> 
+                            <dice-parser v-if="block.dice" :text="item.desc"></dice-parser>
+                            <template v-else>{{ item.desc }}</template>
                         </li>
                     </ul>
                 </div>
@@ -197,7 +205,10 @@
             template: `
                 <div v-if="getProperty(block.properties[0])">
                     <h3 v-if="block.heading">{{ block.heading }}</h3>
-                    <p>{{ getProperty(block.properties[0]) }}</p>
+                    <p>
+                        <dice-parser v-if="block.dice" :text="getProperty(block.properties[0])"></dice-parser>
+                        <template v-else>{{ getProperty(block.properties[0]) }}</template>
+                    </p>
                 </div>
             `
         });
@@ -222,6 +233,95 @@
                     return type + '-block';
                 }
             }
+        });
+
+        app.component('dice-parser', {
+            props: ['text'],
+            computed: {
+                segments() {
+                    if (typeof this.text !== 'string') return [];
+                    // This regex finds dice formulas like (1d20+5) or (1 (1d20+5)) and captures the formula and surrounding text.
+                    const regex = /(?:\(\d+\s*)?\((\d+d\d+(?:[+-]\d+)?)\)\)?/g;
+                    const segments = [];
+                    let lastIndex = 0;
+                    let match;
+
+                    while ((match = regex.exec(this.text)) !== null) {
+                        if (match.index > lastIndex) {
+                            segments.push({ type: 'text', content: this.text.substring(lastIndex, match.index) });
+                        }
+                        segments.push({ type: 'dice', content: match[1] });
+                        lastIndex = regex.lastIndex;
+                    }
+
+                    if (lastIndex < this.text.length) {
+                        segments.push({ type: 'text', content: this.text.substring(lastIndex) });
+                    }
+
+                    return segments;
+                }
+            },
+            template: `
+                <span v-for="segment in segments">
+                    <template v-if="segment.type === 'text'">{{ segment.content }}</template>
+                    <dice-roller v-if="segment.type === 'dice'" :formula="segment.content"></dice-roller>
+                </span>
+            `
+        });
+
+        app.component('dice-roller', {
+            props: ['formula'],
+            data() {
+                return {
+                    showPopup: false,
+                    popupMessage: ''
+                };
+            },
+            methods: {
+                rollDice() {
+                    try {
+                        const match = this.formula.match(/(\d*)d(\d+)([+-]\d+)?/);
+                        if (!match) throw new Error('Invalid dice formula');
+
+                        const numDice = match[1] ? parseInt(match[1], 10) : 1;
+                        const numSides = parseInt(match[2], 10);
+                        const modifier = match[3] ? parseInt(match[3], 10) : 0;
+
+                        let rolls = [];
+                        let sum = 0;
+                        for (let i = 0; i < numDice; i++) {
+                            const roll = Math.floor(Math.random() * numSides) + 1;
+                            rolls.push(roll);
+                            sum += roll;
+                        }
+
+                        const total = sum + modifier;
+                        let message = `Бросок: ${this.formula}. Выпало: ${rolls.join(', ')}.`;
+                        if (numDice > 1 || modifier !== 0) {
+                            let details = [];
+                            if (numDice > 1) details.push(`Сумма: ${sum}`);
+                            if (modifier !== 0) details.push(`Модификатор: ${modifier > 0 ? '+' + modifier : modifier}`);
+                            details.push(`Итог: ${total}`);
+                            message += ` ${details.join(', ')}`;
+                        }
+                        
+                        this.popupMessage = message;
+                        this.showPopup = true;
+
+                    } catch (e) {
+                        this.popupMessage = 'Ошибка при броске: ' + e.message;
+                        this.showPopup = true;
+                    }
+                }
+            },
+            template: `
+                <span @click="rollDice" class="dice-roller">🎲{{ formula }}</span>
+                <div v-if="showPopup" class="dice-popup-overlay" @click="showPopup = false"></div>
+                <div v-if="showPopup" class="dice-popup">
+                    <p>{{ popupMessage }}</p>
+                    <button @click="showPopup = false">Закрыть</button>
+                </div>
+            `
         });
 
 
