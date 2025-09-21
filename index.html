@@ -91,6 +91,9 @@
                     }
                     return this.data[prop] || this.block.fallback;
                 }
+            },
+            computed: {
+                isHtml() { return (value) => typeof value === 'string' && /<[a-z][\s\S]*>/i.test(value); }
             }
         };
 
@@ -127,13 +130,21 @@
         app.component('heading-block', {
             mixins: [propertyMixin],
             props: ['block', 'data', 'layout'],
-            template: `<h1 v-if="getProperty(block.properties[0])">{{ getProperty(block.properties[0]) }}</h1>`
+            template: `
+                <h1 v-if="getProperty(block.properties[0])">
+                    <span v-if="isHtml(getProperty(block.properties[0]))" v-html="getProperty(block.properties[0])"></span>
+                    <template v-else>{{ getProperty(block.properties[0]) }}</template>
+                </h1>`
         });
 
         app.component('subheading-block', {
             mixins: [propertyMixin],
             props: ['block', 'data', 'layout'],
-            template: `<h3 v-if="getProperty(block.properties[0])">{{ getProperty(block.properties[0]) }}</h3>`
+            template: `
+                <h3 v-if="getProperty(block.properties[0])">
+                    <span v-if="isHtml(getProperty(block.properties[0]))" v-html="getProperty(block.properties[0])"></span>
+                    <template v-else>{{ getProperty(block.properties[0]) }}</template>
+                </h3>`
         });
 
         app.component('property-block', {
@@ -145,7 +156,10 @@
                     <template v-if="block.dice">
                         <dice-parser :text="getProperty(block.properties[0])"></dice-parser>
                     </template>
-                    <template v-else>{{ getProperty(block.properties[0]) }}</template>
+                    <template v-else>
+                        <span v-if="isHtml(getProperty(block.properties[0]))" v-html="getProperty(block.properties[0])"></span>
+                        <template v-else>{{ getProperty(block.properties[0]) }}</template>
+                    </template>
                 </div>
             `
         });
@@ -179,7 +193,10 @@
                         <li v-for="item in getProperty(block.properties[0])">
                             <strong>{{ item.name }}:</strong> 
                             <dice-parser v-if="block.dice" :text="item.desc"></dice-parser>
-                            <template v-else>{{ item.desc }}</template>
+                            <template v-else>
+                                <span v-if="isHtml(item.desc)" v-html="item.desc"></span>
+                                <template v-else>{{ item.desc }}</template>
+                            </template>
                         </li>
                     </ul>
                 </div>
@@ -194,7 +211,10 @@
                     <h3 v-if="block.heading">{{ block.heading }}</h3>
                     <p>
                         <dice-parser v-if="block.dice" :text="getProperty(block.properties[0])"></dice-parser>
-                        <template v-else>{{ getProperty(block.properties[0]) }}</template>
+                        <template v-else>
+                            <span v-if="isHtml(getProperty(block.properties[0]))" v-html="getProperty(block.properties[0])"></span>
+                            <template v-else>{{ getProperty(block.properties[0]) }}</template>
+                        </template>
                     </p>
                 </div>
             `
